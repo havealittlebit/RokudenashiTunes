@@ -1,1 +1,62 @@
+name: Auto Encrypt and Deploy
 
+on:
+  push:
+    branches:
+      - main  # mainブランチに保存されたら実行
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install crypto-js
+
+      - name: Encrypt and Wrap
+        env:
+          PASS: ${{ secrets.ENCRYPT_PASS }}
+        run: |
+          # nodeを使ってindex.htmlを暗号化し、復号用の「ガワ」に埋め込む
+          node -e "
+          const fs = require('fs');
+          const CryptoJS = require('crypto-js');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const encrypted = CryptoJS.AES.encrypt(html, '$PASS').toString();
+          const wrapper = \`
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset='UTF-8'><title>ロクデナシ achieve</title>
+            <script src='https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js'></script>
+          </head>
+          <body>
+            <div id='l' style='text-align:center;padding-top:100px;font-family:sans-serif;'>Loading...</div>
+            <script>
+              try {
+                const dec = CryptoJS.AES.decrypt('\${encrypted}', '$PASS').toString(CryptoJS.enc.Utf8);
+                if (!dec) throw new Error();
+                document.open(); document.write(dec); document.close();
+              } catch(e) {
+                document.getElementById('l').innerText = 'エラーが発生しました。';
+              }
+            </script>
+          </body>
+          </html>\`;
+          fs.writeFileSync('public_index.html', wrapper);
+          "
+
+            - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
+          publish_branch: gh-pages  # 公開用ブランチを指定
+          publish_filename: index.html

@@ -3,7 +3,7 @@ name: Auto Encrypt and Deploy
 on:
   push:
     branches:
-      - main  # mainブランチに保存されたら実行
+      - main
 
 jobs:
   build-and-deploy:
@@ -17,31 +17,32 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install crypto-js
         run: npm install crypto-js
 
-      - name: Encrypt and Wrap
+      - name: Encrypt HTML
         env:
           PASS: ${{ secrets.ENCRYPT_PASS }}
         run: |
-          # nodeを使ってindex.htmlを暗号化し、復号用の「ガワ」に埋め込む
           node -e "
           const fs = require('fs');
           const CryptoJS = require('crypto-js');
           const html = fs.readFileSync('index.html', 'utf8');
-          const encrypted = CryptoJS.AES.encrypt(html, '$PASS').toString();
+          const encrypted = CryptoJS.AES.encrypt(html, process.env.PASS).toString();
           const wrapper = \`
           <!DOCTYPE html>
-          <html>
+          <html lang='ja'>
           <head>
             <meta charset='UTF-8'><title>ロクデナシ achieve</title>
             <script src='https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js'></script>
+            <style>body{background:#f5f3ff;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;font-family:sans-serif;color:#7c3aed;font-weight:bold;}</style>
           </head>
           <body>
-            <div id='l' style='text-align:center;padding-top:100px;font-family:sans-serif;'>Loading...</div>
+            <div id='l'>読み込み中...</div>
             <script>
               try {
-                const dec = CryptoJS.AES.decrypt('\${encrypted}', '$PASS').toString(CryptoJS.enc.Utf8);
+                // ここで環境変数を直接書かず、Actions実行時に文字として埋め込まれたパスワードを使用します
+                const dec = CryptoJS.AES.decrypt('\\\${encrypted}', '${process.env.PASS}').toString(CryptoJS.enc.Utf8);
                 if (!dec) throw new Error();
                 document.open(); document.write(dec); document.close();
               } catch(e) {
@@ -50,13 +51,14 @@ jobs:
             </script>
           </body>
           </html>\`;
-          fs.writeFileSync('public_index.html', wrapper);
+          // ブラウザ側に渡るコード内では、PASSを直接文字列として埋め込む形に調整
+          const finalWrapper = wrapper.replace('${process.env.PASS}', process.env.PASS);
+          fs.writeFileSync('index.html', finalWrapper);
           "
 
-            - name: Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: .
-          publish_branch: gh-pages  # 公開用ブランチを指定
-          publish_filename: index.html
+          publish_branch: gh-pages
